@@ -7,10 +7,6 @@ using System.IO;
 using System.Text.RegularExpressions;
 using System.Windows.Forms;
 
-[assembly: System.Reflection.AssemblyTitle("TypeCommander")]
-[assembly: System.Reflection.AssemblyProduct("TypeCommander")]
-[assembly: System.Reflection.AssemblyVersion("1.0.0.0")]
-
 namespace TypeCommander
 {
     internal sealed class MainForm : Form
@@ -29,9 +25,12 @@ namespace TypeCommander
         private int secondsLeft;
         private bool counting;
 
+        private static readonly string AppTitle = "TypeCommander v" +
+            typeof(MainForm).Assembly.GetName().Version.ToString(3);
+
         public MainForm(string initialPath)
         {
-            Text = "TypeCommander";
+            Text = AppTitle;
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
@@ -166,7 +165,7 @@ namespace TypeCommander
         private void UpdateCountdown()
         {
             string msg = string.Format("Typing in {0}...", secondsLeft);
-            Text = msg + " - TypeCommander";
+            Text = msg + " - " + AppTitle;
             SetStatus(msg + " Click into the target window now.");
         }
 
@@ -201,7 +200,7 @@ namespace TypeCommander
         private void Finish(string msg)
         {
             counting = false;
-            Text = "TypeCommander";
+            Text = AppTitle;
             startButton.Text = "Start typing";
             SetInputsEnabled(true);
             if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
