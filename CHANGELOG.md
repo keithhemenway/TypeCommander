@@ -2,6 +2,15 @@
 
 All notable changes to TypeCommander are recorded here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [1.0.1] - 2026-11-25
+
+### Fixed
+- Startup errors now show a message box instead of exiting silently.
+- Shortened the minimize option label so it fits the window.
+
+### Changed
+- README: notes on Smart App Control and SmartScreen blocking unsigned downloads.
+
 ## [1.0.0] - 2026-11-25
 
 ### Added

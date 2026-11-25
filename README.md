@@ -9,6 +9,14 @@ A tiny, portable Windows tool that "types" the contents of a text file into what
 
 Get the latest `TypeCommander-vX.Y.Z-win.zip` (or the bare exe) from the [Releases](https://github.com/keithhemenway/TypeCommander/releases) page. Copy the exe anywhere, e.g. a USB stick or admin share.
 
+## If double-clicking does nothing
+
+TypeCommander isn't code-signed yet, so Windows may block it silently:
+
+- **Smart App Control** (on by default on clean Windows 11 installs) blocks unsigned apps it doesn't recognize, sometimes with only a brief notification. Check *Windows Security > App & browser control > Smart App Control*, and *Event Viewer > Applications and Services Logs > Microsoft > Windows > CodeIntegrity > Operational* (event 3077 or 3033).
+- **Downloaded file blocked:** right-click the exe or zip > Properties > tick **Unblock**, or run `Unblock-File .\TypeCommander.exe` in PowerShell.
+- **.NET errors** appear in *Event Viewer > Windows Logs > Application* (source ".NET Runtime" or "Application Error").
+
 ## Using the app
 
 1. Run `TypeCommander.exe`.

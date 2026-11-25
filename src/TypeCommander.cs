@@ -63,7 +63,7 @@ namespace TypeCommander
             delayBox.Maximum = 300;
             delayBox.Value = 3;
 
-            minimizeBox.Text = "Minimize while waiting (returns focus to previous window)";
+            minimizeBox.Text = "Minimize while waiting";
             minimizeBox.SetBounds(160, 46, 290, 22);
             minimizeBox.Checked = true;
 
@@ -236,9 +236,25 @@ namespace TypeCommander
         [STAThread]
         private static void Main(string[] args)
         {
-            Application.EnableVisualStyles();
-            Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new MainForm(args.Length > 0 ? args[0] : DefaultFile));
+            Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+            Application.ThreadException += delegate(object s, System.Threading.ThreadExceptionEventArgs e) { ShowError(e.Exception); };
+            AppDomain.CurrentDomain.UnhandledException += delegate(object s, UnhandledExceptionEventArgs e) { ShowError(e.ExceptionObject as Exception); };
+            try
+            {
+                Application.EnableVisualStyles();
+                Application.SetCompatibleTextRenderingDefault(false);
+                Application.Run(new MainForm(args.Length > 0 ? args[0] : DefaultFile));
+            }
+            catch (Exception ex)
+            {
+                ShowError(ex);
+            }
+        }
+
+        private static void ShowError(Exception ex)
+        {
+            MessageBox.Show("TypeCommander hit an error:\r\n\r\n" + (ex == null ? "Unknown error" : ex.ToString()),
+                "TypeCommander", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 }
