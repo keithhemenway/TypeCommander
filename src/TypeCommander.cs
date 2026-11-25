@@ -45,6 +45,7 @@ namespace TypeCommander
         private readonly CheckBox minimizeBox = new CheckBox();
         private readonly TextBox previewBox = new TextBox();
         private readonly Label statusLabel = new Label();
+        private readonly ProgressBar progressBar = new ProgressBar();
         private readonly Button startButton = new Button();
         private readonly System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer();
 
@@ -65,7 +66,7 @@ namespace TypeCommander
             StartPosition = FormStartPosition.CenterScreen;
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
-            ClientSize = new Size(460, 330);
+            ClientSize = new Size(460, 350);
             Font = new Font("Segoe UI", 9F);
             KeyPreview = true;
             AllowDrop = true;
@@ -106,8 +107,12 @@ namespace TypeCommander
 
             statusLabel.SetBounds(12, 256, 436, 20);
 
+            progressBar.SetBounds(12, 279, 436, 14);
+            progressBar.Minimum = 0;
+            progressBar.Maximum = 1000;
+
             startButton.Text = "Start typing";
-            startButton.SetBounds(12, 285, 436, 34);
+            startButton.SetBounds(12, 303, 436, 34);
             startButton.Click += delegate { if (counting) RequestStop(); else Begin(); };
 
             timer.Interval = 1000;
@@ -115,7 +120,7 @@ namespace TypeCommander
 
             Controls.AddRange(new Control[] {
                 fileLabel, pathBox, browseButton, delayLabel, delayBox,
-                minimizeBox, previewBox, statusLabel, startButton });
+                minimizeBox, previewBox, statusLabel, progressBar, startButton });
 
             AcceptButton = startButton;
             KeyDown += OnKeyDown;
@@ -229,6 +234,7 @@ namespace TypeCommander
 
             if (stopRequested) { Finish("Cancelled."); return; }
             typing = true;
+            progressBar.Value = 0;
             SetStatus("Typing... press Esc, Pause, or move the mouse to stop.");
             Text = "Typing - " + AppTitle;
 
@@ -249,6 +255,7 @@ namespace TypeCommander
                 POINT start;
                 GetCursorPos(out start);
                 result = null;
+                int lastUpdate = Environment.TickCount;
                 foreach (string chunk in Chunks(text))
                 {
                     if (stopRequested || (GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0 || (GetAsyncKeyState(VK_PAUSE) & 0x8000) != 0)
@@ -261,6 +268,12 @@ namespace TypeCommander
                     { result = "Stopped: target window lost focus after {0} of {1} characters."; break; }
                     SendKeys.SendWait(Escape(chunk));
                     typed += chunk.Length;
+                    if (Environment.TickCount - lastUpdate >= 50)
+                    {
+                        lastUpdate = Environment.TickCount;
+                        int done = typed, total = text.Length;
+                        BeginInvoke((MethodInvoker)delegate { ShowProgress(done, total); });
+                    }
                 }
                 if (result == null) result = "Done. Typed {0} characters into \"" + WindowTitle(target).Replace("{", "{{").Replace("}", "}}") + "\".";
                 result = string.Format(result, typed.ToString("N0"), text.Length.ToString("N0"));
@@ -270,8 +283,16 @@ namespace TypeCommander
                 result = "Failed: " + ex.Message;
             }
             string msg = result;
-            try { BeginInvoke((MethodInvoker)delegate { typing = false; Finish(msg); }); }
+            int finalTyped = typed, finalTotal = text.Length;
+            try { BeginInvoke((MethodInvoker)delegate { typing = false; ShowProgress(finalTyped, finalTotal); Finish(msg); }); }
             catch (InvalidOperationException) { }
+        }
+
+        private void ShowProgress(int done, int total)
+        {
+            int permille = total == 0 ? 1000 : (int)(1000L * done / total);
+            progressBar.Value = Math.Max(0, Math.Min(1000, permille));
+            if (typing) Text = string.Format("Typing {0}% - {1}", permille / 10, AppTitle);
         }
 
         private void RequestStop()

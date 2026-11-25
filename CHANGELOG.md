@@ -2,6 +2,11 @@
 
 All notable changes to TypeCommander are recorded here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] - 2026-11-25
+
+### Added
+- Progress bar while typing, with the percentage shown in the title bar and taskbar.
+
 ## [1.0.3] - 2026-11-25
 
 ### Fixed
