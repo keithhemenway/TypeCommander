@@ -9,6 +9,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.IO;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Windows.Forms;
 
 namespace TypeCommander
@@ -17,14 +18,22 @@ namespace TypeCommander
     {
         private const string DefaultFile = @"C:\temp\keys.txt";
         private const int LargeFileChars = 20000;
-        private const int ChunkChars = 40;
+        private const int ChunkChars = 8;
+        private const int MouseStopPixels = 40;
+        private const int HotkeyId = 0x5443;
+        private const int WM_HOTKEY = 0x0312;
 
         [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
         [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr hWnd, StringBuilder buf, int max);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowText(IntPtr hWnd, StringBuilder buf, int max);
         [DllImport("user32.dll")] private static extern short GetAsyncKeyState(int vKey);
+        [DllImport("user32.dll")] private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint mods, uint vk);
+        [DllImport("user32.dll")] private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
+        [DllImport("user32.dll")] private static extern bool GetCursorPos(out POINT pt);
+        [StructLayout(LayoutKind.Sequential)] private struct POINT { public int X; public int Y; }
         private const int VK_ESCAPE = 0x1B;
+        private const int VK_PAUSE = 0x13;
 
         // Windows that should never receive typed text: desktop, taskbar, Explorer.
         private static readonly string[] BlockedClasses = {
@@ -37,10 +46,13 @@ namespace TypeCommander
         private readonly TextBox previewBox = new TextBox();
         private readonly Label statusLabel = new Label();
         private readonly Button startButton = new Button();
-        private readonly Timer timer = new Timer();
+        private readonly System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer();
 
         private int secondsLeft;
         private bool counting;
+        private bool hotkeyRegistered;
+        private volatile bool stopRequested;
+        private volatile bool typing;
 
         private static readonly string AppTitle = "TypeCommander v" +
             typeof(MainForm).Assembly.GetName().Version.ToString(3);
@@ -96,7 +108,7 @@ namespace TypeCommander
 
             startButton.Text = "Start typing";
             startButton.SetBounds(12, 285, 436, 34);
-            startButton.Click += delegate { if (counting) Cancel("Cancelled."); else Begin(); };
+            startButton.Click += delegate { if (counting) RequestStop(); else Begin(); };
 
             timer.Interval = 1000;
             timer.Tick += delegate { Tick(); };
@@ -173,9 +185,12 @@ namespace TypeCommander
 
             secondsLeft = (int)delayBox.Value;
             counting = true;
+            stopRequested = false;
             SetInputsEnabled(false);
             startButton.Text = "Cancel (Esc)";
-            SetStatus("Click into the target window. Hold Esc to stop typing.");
+            // Esc works from any window while counting down or typing. Text never
+            // contains a real Esc keystroke, so any Esc press is the user's.
+            hotkeyRegistered = RegisterHotKey(Handle, HotkeyId, 0, VK_ESCAPE);
 
             if (secondsLeft == 0) { Fire(); return; }
 
@@ -186,6 +201,7 @@ namespace TypeCommander
 
         private void Tick()
         {
+            if (stopRequested) { Cancel("Cancelled."); return; }
             secondsLeft--;
             if (secondsLeft <= 0) { timer.Stop(); Fire(); }
             else UpdateCountdown();
@@ -195,35 +211,86 @@ namespace TypeCommander
         {
             string msg = string.Format("Typing in {0}...", secondsLeft);
             Text = msg + " - " + AppTitle;
-            SetStatus(msg + " Click into the target window now.");
+            SetStatus(msg + " Click into the target window now. Esc cancels.");
         }
 
         private void Fire()
         {
+            string text;
+            try { text = File.ReadAllText(pathBox.Text.Trim()); }
+            catch (Exception ex) { Finish("Failed: " + ex.Message); return; }
+
+            string problem = CheckText(text);
+            if (problem != null) { Finish(problem); return; }
+
+            IntPtr target = GetForegroundWindow();
+            string why = CheckTarget(target);
+            if (why != null) { Finish("Not typed: " + why); return; }
+
+            if (stopRequested) { Finish("Cancelled."); return; }
+            typing = true;
+            SetStatus("Typing... press Esc, Pause, or move the mouse to stop.");
+            Text = "Typing - " + AppTitle;
+
+            Thread worker = new Thread(delegate() { TypeText(text, target); });
+            worker.IsBackground = true;
+            worker.SetApartmentState(ApartmentState.STA);
+            worker.Start();
+        }
+
+        // Runs on a background thread so the window, Cancel button and Esc
+        // hotkey stay responsive. Checks for a stop between small chunks.
+        private void TypeText(string text, IntPtr target)
+        {
+            string result;
+            int typed = 0;
             try
             {
-                string text = File.ReadAllText(pathBox.Text.Trim());
-                string problem = CheckText(text);
-                if (problem != null) { Finish(problem); return; }
-
-                IntPtr target = GetForegroundWindow();
-                string why = CheckTarget(target);
-                if (why != null) { Finish("Not typed: " + why); return; }
-
-                int typed = 0;
+                POINT start;
+                GetCursorPos(out start);
+                result = null;
                 foreach (string chunk in Chunks(text))
                 {
-                    if ((GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0) { Finish("Stopped (Esc) after " + typed.ToString("N0") + " characters."); return; }
-                    if (GetForegroundWindow() != target) { Finish("Stopped: the target window lost focus after " + typed.ToString("N0") + " characters."); return; }
+                    if (stopRequested || (GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0 || (GetAsyncKeyState(VK_PAUSE) & 0x8000) != 0)
+                    { result = "Stopped after {0} of {1} characters."; break; }
+                    POINT now;
+                    GetCursorPos(out now);
+                    if (Math.Abs(now.X - start.X) > MouseStopPixels || Math.Abs(now.Y - start.Y) > MouseStopPixels)
+                    { result = "Stopped (mouse moved) after {0} of {1} characters."; break; }
+                    if (GetForegroundWindow() != target)
+                    { result = "Stopped: target window lost focus after {0} of {1} characters."; break; }
                     SendKeys.SendWait(Escape(chunk));
                     typed += chunk.Length;
                 }
-                Finish("Done. Typed " + typed.ToString("N0") + " characters into \"" + WindowTitle(target) + "\".");
+                if (result == null) result = "Done. Typed {0} characters into \"" + WindowTitle(target).Replace("{", "{{").Replace("}", "}}") + "\".";
+                result = string.Format(result, typed.ToString("N0"), text.Length.ToString("N0"));
             }
             catch (Exception ex)
             {
-                Finish("Failed: " + ex.Message);
+                result = "Failed: " + ex.Message;
             }
+            string msg = result;
+            try { BeginInvoke((MethodInvoker)delegate { typing = false; Finish(msg); }); }
+            catch (InvalidOperationException) { }
+        }
+
+        private void RequestStop()
+        {
+            stopRequested = true;
+            if (!typing) Cancel("Cancelled.");
+        }
+
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == WM_HOTKEY && m.WParam.ToInt32() == HotkeyId) { RequestStop(); return; }
+            base.WndProc(ref m);
+        }
+
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            stopRequested = true;
+            if (hotkeyRegistered) { UnregisterHotKey(Handle, HotkeyId); hotkeyRegistered = false; }
+            base.OnFormClosing(e);
         }
 
         // Rejects binary or non-text files. Control characters would turn into
@@ -288,6 +355,7 @@ namespace TypeCommander
 
         private void Finish(string msg)
         {
+            if (hotkeyRegistered) { UnregisterHotKey(Handle, HotkeyId); hotkeyRegistered = false; }
             counting = false;
             Text = AppTitle;
             startButton.Text = "Start typing";
@@ -308,7 +376,7 @@ namespace TypeCommander
 
         private void OnKeyDown(object sender, KeyEventArgs e)
         {
-            if (e.KeyCode == Keys.Escape && counting) { Cancel("Cancelled."); e.Handled = true; }
+            if (e.KeyCode == Keys.Escape && counting) { RequestStop(); e.Handled = true; }
         }
 
         private void OnDragEnter(object sender, DragEventArgs e)

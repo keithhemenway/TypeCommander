@@ -2,6 +2,16 @@
 
 All notable changes to TypeCommander are recorded here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [1.0.3] - 2026-11-25
+
+### Fixed
+- Stopping now works reliably. Typing runs on a background thread, so the window and Cancel button stay responsive.
+
+### Added
+- Esc is a global hotkey while counting down or typing: press it from any window to stop.
+- Press Pause, or move the mouse more than a little, to stop typing.
+- Status shows how much was typed when stopped.
+
 ## [1.0.2] - 2026-11-25
 
 ### Fixed
