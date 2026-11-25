@@ -2,7 +2,11 @@
 // Single file, no dependencies beyond .NET Framework 4.x (built into Windows).
 // Written in C# 5 so the csc.exe that ships with Windows can compile it.
 using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.Drawing;
+using System.Runtime.InteropServices;
+using System.Text;
 using System.IO;
 using System.Text.RegularExpressions;
 using System.Windows.Forms;
@@ -12,6 +16,19 @@ namespace TypeCommander
     internal sealed class MainForm : Form
     {
         private const string DefaultFile = @"C:\temp\keys.txt";
+        private const int LargeFileChars = 20000;
+        private const int ChunkChars = 40;
+
+        [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+        [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr hWnd, StringBuilder buf, int max);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowText(IntPtr hWnd, StringBuilder buf, int max);
+        [DllImport("user32.dll")] private static extern short GetAsyncKeyState(int vKey);
+        private const int VK_ESCAPE = 0x1B;
+
+        // Windows that should never receive typed text: desktop, taskbar, Explorer.
+        private static readonly string[] BlockedClasses = {
+            "Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd", "CabinetWClass", "ExploreWClass" };
 
         private readonly TextBox pathBox = new TextBox();
         private readonly Button browseButton = new Button();
@@ -65,7 +82,7 @@ namespace TypeCommander
 
             minimizeBox.Text = "Minimize while waiting";
             minimizeBox.SetBounds(160, 46, 290, 22);
-            minimizeBox.Checked = true;
+            minimizeBox.Checked = false;
 
             previewBox.SetBounds(12, 78, 436, 170);
             previewBox.Multiline = true;
@@ -125,6 +142,14 @@ namespace TypeCommander
             try
             {
                 string text = File.ReadAllText(path);
+                string problem = CheckText(text);
+                if (problem != null)
+                {
+                    previewBox.Text = "";
+                    SetStatus(problem);
+                    startButton.Enabled = false;
+                    return;
+                }
                 previewBox.Text = text.Replace("\r\n", "\n").Replace("\n", "\r\n");
                 int lines = text.Length == 0 ? 0 : text.Split('\n').Length;
                 SetStatus(string.Format("{0:N0} characters, {1:N0} lines. Click Start, then click into the target window.", text.Length, lines));
@@ -142,11 +167,15 @@ namespace TypeCommander
         {
             LoadPreview();
             if (!startButton.Enabled) return;
+            if (previewBox.TextLength > LargeFileChars &&
+                MessageBox.Show(this, string.Format("This file is {0:N0} characters. Type all of it?", previewBox.TextLength),
+                    "TypeCommander", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
 
             secondsLeft = (int)delayBox.Value;
             counting = true;
             SetInputsEnabled(false);
             startButton.Text = "Cancel (Esc)";
+            SetStatus("Click into the target window. Hold Esc to stop typing.");
 
             if (secondsLeft == 0) { Fire(); return; }
 
@@ -174,12 +203,72 @@ namespace TypeCommander
             try
             {
                 string text = File.ReadAllText(pathBox.Text.Trim());
-                SendKeys.SendWait(Escape(text));
-                Finish("Done. Typed " + text.Length.ToString("N0") + " characters.");
+                string problem = CheckText(text);
+                if (problem != null) { Finish(problem); return; }
+
+                IntPtr target = GetForegroundWindow();
+                string why = CheckTarget(target);
+                if (why != null) { Finish("Not typed: " + why); return; }
+
+                int typed = 0;
+                foreach (string chunk in Chunks(text))
+                {
+                    if ((GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0) { Finish("Stopped (Esc) after " + typed.ToString("N0") + " characters."); return; }
+                    if (GetForegroundWindow() != target) { Finish("Stopped: the target window lost focus after " + typed.ToString("N0") + " characters."); return; }
+                    SendKeys.SendWait(Escape(chunk));
+                    typed += chunk.Length;
+                }
+                Finish("Done. Typed " + typed.ToString("N0") + " characters into \"" + WindowTitle(target) + "\".");
             }
             catch (Exception ex)
             {
                 Finish("Failed: " + ex.Message);
+            }
+        }
+
+        // Rejects binary or non-text files. Control characters would turn into
+        // Ctrl/Alt key combinations and can launch things.
+        internal static string CheckText(string text)
+        {
+            int bad = 0;
+            foreach (char c in text)
+                if (c < 32 && c != '\t' && c != '\r' && c != '\n') bad++;
+            if (bad > 0)
+                return string.Format("This doesn't look like a plain text file ({0:N0} control characters). Not typing it.", bad);
+            return null;
+        }
+
+        private static string CheckTarget(IntPtr hwnd)
+        {
+            if (hwnd == IntPtr.Zero) return "no window has focus.";
+            uint pid;
+            GetWindowThreadProcessId(hwnd, out pid);
+            if (pid == (uint)Process.GetCurrentProcess().Id) return "TypeCommander itself had focus. Click into the target window during the countdown.";
+            StringBuilder cls = new StringBuilder(256);
+            GetClassName(hwnd, cls, cls.Capacity);
+            if (Array.IndexOf(BlockedClasses, cls.ToString()) >= 0)
+                return "the desktop, taskbar or File Explorer had focus. Click into the target window during the countdown.";
+            return null;
+        }
+
+        private static string WindowTitle(IntPtr hwnd)
+        {
+            StringBuilder sb = new StringBuilder(256);
+            GetWindowText(hwnd, sb, sb.Capacity);
+            return sb.ToString();
+        }
+
+        // Splits text into small pieces (never splitting a CRLF) so typing can be
+        // stopped between pieces.
+        private static IEnumerable<string> Chunks(string text)
+        {
+            int i = 0;
+            while (i < text.Length)
+            {
+                int len = Math.Min(ChunkChars, text.Length - i);
+                if (i + len < text.Length && text[i + len - 1] == '\r' && text[i + len] == '\n') len++;
+                yield return text.Substring(i, len);
+                i += len;
             }
         }
 

@@ -2,6 +2,20 @@
 
 All notable changes to TypeCommander are recorded here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [1.0.2] - 2026-11-25
+
+### Fixed
+- Refuses to type binary or non-text files. Control characters were being sent as Ctrl/Alt key combinations, which could launch programs and open windows.
+- Refuses to type into the desktop, taskbar, File Explorer, or TypeCommander itself.
+
+### Added
+- Typing stops if the target window loses focus, or if you hold Esc.
+- Asks for confirmation before typing files over 20,000 characters.
+- Shows which window the text was typed into.
+
+### Changed
+- "Minimize while waiting" is now off by default.
+
 ## [1.0.1] - 2026-11-25
 
 ### Fixed

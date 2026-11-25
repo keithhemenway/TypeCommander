@@ -22,7 +22,9 @@ TypeCommander isn't code-signed yet, so Windows may block it silently:
 1. Run `TypeCommander.exe`.
 2. Pick the text file with **Browse...** or drag it onto the window. Default is `C:\temp\keys.txt`.
 3. Check the preview, set the **Delay**, and click **Start typing**.
-4. Click into the target window before the countdown ends. Press **Esc** or **Cancel** to abort.
+4. Click into the target window before the countdown ends. Press **Esc** or **Cancel** to abort the countdown, or hold **Esc** to stop typing.
+
+Safety checks: TypeCommander won't type binary files (control characters would turn into Ctrl/Alt shortcuts), won't type into the desktop, taskbar, File Explorer or itself, stops if the target window loses focus, and asks before typing files over 20,000 characters.
 
 With "Minimize while waiting" on, the app gets out of the way and focus usually returns to the window you were in before.
 
