@@ -2,6 +2,11 @@
 
 All notable changes to TypeCommander are recorded here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [2.0.2] - 2026-11-26
+
+### Changed
+- Smaller exe: the app icon keeps only the 16, 24, 32 and 48 px sizes (17 KB down to 5.5 KB).
+
 ## [2.0.1] - 2026-11-26
 
 ### Removed
