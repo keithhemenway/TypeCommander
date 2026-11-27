@@ -82,7 +82,6 @@ namespace TypeCommander
             AllowDrop = true;
             try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch (Exception) { }
 
-            AnchorStyles top = AnchorStyles.Top | AnchorStyles.Left;
             AnchorStyles topWide = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             AnchorStyles topRight = AnchorStyles.Top | AnchorStyles.Right;
             AnchorStyles bottomWide = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
