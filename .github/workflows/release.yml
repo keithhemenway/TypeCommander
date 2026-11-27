@@ -1,3 +1,5 @@
+# Build on every push and pull request. On a v* tag, also sign the exe and
+# publish a GitHub release. Signing setup: docs/code-signing.md
 name: Build and release
 
 on:
@@ -13,7 +15,7 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Check tag matches VERSION
         if: startsWith(github.ref, 'refs/tags/v')
@@ -26,32 +28,55 @@ jobs:
         shell: cmd
         run: build.bat
 
-      - uses: actions/upload-artifact@v4
+      - name: Release notes from CHANGELOG.md
+        shell: pwsh
+        run: |
+          $ver = (Get-Content VERSION -Raw).Trim()
+          $lines = Get-Content CHANGELOG.md
+          $start = [array]::FindIndex($lines, [Predicate[string]]{ param($l) $l.StartsWith("## [$ver]") })
+          if ($start -lt 0) { throw "CHANGELOG.md has no section for $ver" }
+          $end = [array]::FindIndex($lines, $start + 1, [Predicate[string]]{ param($l) $l.StartsWith('## ') })
+          if ($end -lt 0) { $end = $lines.Count }
+          $notes = ($lines[($start + 1)..($end - 1)] -join "`n").Trim()
+          $notes += "`n`n---`n`n**Download:** ``TypeCommander-v$ver-win.zip`` (exe, README, CHANGELOG) or the bare ``TypeCommander.exe``.`n`n"
+          $notes += "``TypeCommander.exe`` is code-signed. To verify, check *Properties > Digital Signatures*, or run ``Get-AuthenticodeSignature .\TypeCommander.exe`` in PowerShell; it should report ``Valid``."
+          Set-Content -Path release-notes.md -Value $notes -Encoding utf8
+          Get-Content release-notes.md
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-notes
+          path: release-notes.md
+
+      - uses: actions/upload-artifact@v7
         with:
           name: TypeCommander
           path: dist/*.zip
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: TypeCommander-exe-unsigned
           path: build/TypeCommander.exe
 
-  # Tagged releases only: sign the exe, rebuild the zip around it, publish.
   release:
     needs: build
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: windows-latest
-    environment: release
+    environment: release      # holds the Azure secrets and signing variables
     permissions:
-      contents: write   # create the GitHub release
-      id-token: write   # OIDC login to Azure
+      contents: write         # create the GitHub release
+      id-token: write         # OIDC login to Azure
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: TypeCommander-exe-unsigned
           path: build
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-notes
 
       - name: Azure login
         uses: azure/login@v3
@@ -85,8 +110,10 @@ jobs:
         run: build.bat package
 
       - name: Publish GitHub release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
+          name: TypeCommander ${{ github.ref_name }}
+          body_path: release-notes.md
           files: |
             dist/*.zip
             build/TypeCommander.exe

@@ -1,92 +1,106 @@
 # TypeCommander
 
-A tiny, portable Windows tool that "types" the contents of a text file into whatever window has focus, using `SendKeys`. Handy for getting commands into remote consoles, VMs, KVM/IPMI/iLO/iDRAC viewers, or any session where clipboard paste doesn't work.
+[![Latest release](https://img.shields.io/github/v/release/keithhemenway/TypeCommander?label=release)](https://github.com/keithhemenway/TypeCommander/releases/latest)
+[![Build](https://img.shields.io/github/actions/workflow/status/keithhemenway/TypeCommander/release.yml?branch=main&label=build)](https://github.com/keithhemenway/TypeCommander/actions/workflows/release.yml)
+[![Code signed](https://img.shields.io/badge/code%20signed-Azure%20Artifact%20Signing-0078D4)](docs/code-signing.md)
+![Windows](https://img.shields.io/badge/platform-Windows-0078D4)
 
-- Single ~28 KB `TypeCommander.exe`, no install, no dependencies.
-- Runs on any Windows with .NET Framework 4.x (built into Windows 8, 10, 11 and Server 2012+).
+**Types a text file into any window, keystroke by keystroke.**
+
+TypeCommander is a tiny, portable Windows tool that sends the contents of a text file to whatever window has focus. It's useful anywhere paste doesn't work: remote consoles, VMs, KVM/IPMI/iLO/iDRAC viewers, locked-down sessions.
+
+- **Portable:** a single ~28 KB `TypeCommander.exe`. No installer, no dependencies.
+- **Runs everywhere:** needs only .NET Framework 4.x, which is built into Windows 8, 10, 11 and Server 2012+.
+- **Signed:** release builds are code-signed, so Windows shows a verified publisher.
+- **Safe by default:** refuses binary files, won't type into the desktop or Explorer, and stops on Esc, Pause, mouse movement or loss of focus.
 
 ## Download
 
-Get the latest `TypeCommander-vX.Y.Z-win.zip` (or the bare exe) from the [Releases](https://github.com/keithhemenway/TypeCommander/releases) page. Copy the exe anywhere, e.g. a USB stick or admin share.
+Get `TypeCommander-vX.Y.Z-win.zip` or the bare `TypeCommander.exe` from the **[latest release](https://github.com/keithhemenway/TypeCommander/releases/latest)**, then copy the exe anywhere, such as a USB stick or an admin share.
 
-## If double-clicking does nothing
+To confirm the download is genuine, right-click the exe > **Properties** > **Digital Signatures** and check that the signer is **Keith Hemenway**. You can also run this in PowerShell:
 
-Release builds are code-signed (see [Code signing](#code-signing)). Older releases and local builds aren't, so Windows may block them silently:
+```powershell
+Get-AuthenticodeSignature .\TypeCommander.exe   # Status should be Valid
+```
 
-- **Smart App Control** (on by default on clean Windows 11 installs) blocks unsigned apps it doesn't recognize, sometimes with only a brief notification. Check *Windows Security > App & browser control > Smart App Control*, and *Event Viewer > Applications and Services Logs > Microsoft > Windows > CodeIntegrity > Operational* (event 3077 or 3033).
-- **Downloaded file blocked:** right-click the exe or zip > Properties > tick **Unblock**, or run `Unblock-File .\TypeCommander.exe` in PowerShell.
-- **.NET errors** appear in *Event Viewer > Windows Logs > Application* (source ".NET Runtime" or "Application Error").
-
-## Using the app
+## Using it
 
 1. Run `TypeCommander.exe`.
-2. Pick the text file with **Browse...** or drag it onto the window. Default is `C:\temp\keys.txt`.
+2. Pick a text file with **Browse...**, or drag it onto the window. The default is `C:\temp\keys.txt`.
 3. Check the preview, set the **Delay**, and click **Start typing**.
-4. Click into the target window before the countdown ends. To stop at any point, press **Esc** (works from any window), press **Pause**, move the mouse, or click **Cancel**.
+4. Click into the target window before the countdown ends.
 
-Safety checks: TypeCommander won't type binary files (control characters would turn into Ctrl/Alt shortcuts), won't type into the desktop, taskbar, File Explorer or itself, stops if the target window loses focus or the mouse moves, and asks before typing files over 20,000 characters.
+**To stop at any time,** press **Esc** (works from any window), press **Pause**, move the mouse, or click **Cancel**.
 
-With "Minimize while waiting" on, the app gets out of the way and focus usually returns to the window you were in before.
+With **Minimize while waiting** on, the app gets out of the way and focus usually returns to the window you were in.
 
-You can also pass a file on the command line: `TypeCommander.exe C:\path\to\commands.txt`
-
-## Repository layout
+You can also pass a file on the command line:
 
 ```
-src/TypeCommander.cs      App source (single file, C# 5)
-src/AssemblyInfo.cs       File properties (title, description, copyright)
-src/app.ico               App icon
-scripts/TypeCommander.ps1 Original PowerShell one-shot script
-VERSION                   Current version number
-CHANGELOG.md              Release notes
-build.bat                 Windows build (uses built-in csc.exe)
-build.sh                  Linux/macOS build (Mono)
-.github/workflows/        CI build and GitHub Release on tag
+TypeCommander.exe C:\path\to\commands.txt
 ```
 
-Build output goes to `build/` and `dist/`, which are not committed.
+### Safety checks
 
-## Building
+TypeCommander:
 
-On Windows (no Visual Studio needed): `build.bat`
+- won't type binary files, because control characters would turn into Ctrl/Alt shortcuts
+- won't type into the desktop, taskbar, File Explorer or itself
+- stops if the target window loses focus or the mouse moves
+- asks before typing files over 20,000 characters
 
-On Linux/macOS with Mono (`mcs`) and `zip`: `sh build.sh`
+### How typing works
 
-Both produce `build\TypeCommander.exe` and `dist\TypeCommander-v<VERSION>-win.zip`.
+SendKeys special characters (`+ ^ % ~ ( ) { } [ ]`) are escaped so they type literally, and line breaks become `{ENTER}`. Keep focus on the target window until typing finishes.
 
-## Releasing a new version
+## Troubleshooting
 
-1. Update `VERSION` (e.g. `1.1.0`) and add a section to `CHANGELOG.md`.
+**Double-clicking does nothing.** Windows may be blocking the exe. Release builds from v1.1.1 on are signed. Older releases and your own local builds aren't.
+
+- **Smart App Control** (on by default on clean Windows 11 installs) silently blocks unsigned apps it doesn't recognize. Check *Windows Security > App & browser control > Smart App Control*, and *Event Viewer > Applications and Services Logs > Microsoft > Windows > CodeIntegrity > Operational* (events 3077 or 3033).
+- **Downloaded file blocked:** right-click the exe or zip > **Properties** > tick **Unblock**, or run `Unblock-File .\TypeCommander.exe` in PowerShell.
+- **.NET errors** appear in *Event Viewer > Windows Logs > Application* (source ".NET Runtime" or "Application Error").
+
+**SmartScreen still warns about a signed release.** A newly signed file can still get a warning until it builds download reputation. Check that the signer is Keith Hemenway, then choose **More info > Run anyway**.
+
+## Building from source
+
+| Platform | Command | Requires |
+|---|---|---|
+| Windows | `build.bat` | Nothing extra (uses the built-in `csc.exe`) |
+| Linux / macOS | `sh build.sh` | Mono (`mcs`) and `zip` |
+
+Both produce `build\TypeCommander.exe` and `dist\TypeCommander-v<VERSION>-win.zip`. Local builds are unsigned.
+
+```
+src/TypeCommander.cs        App source (single file, C# 5)
+src/AssemblyInfo.cs         File properties (title, description, copyright)
+src/app.ico                 App icon
+scripts/TypeCommander.ps1   Original PowerShell one-shot script
+docs/code-signing.md        How release signing is set up
+VERSION                     Current version number
+CHANGELOG.md                Release notes
+build.bat / build.sh        Build scripts
+.github/workflows/          CI: build on every push, sign and release on tags
+```
+
+## Releasing
+
+1. Bump `VERSION` and add a matching section to `CHANGELOG.md`.
 2. Commit, then tag and push:
    ```
-   git tag v1.1.0
-   git push origin main --tags
+   git tag v1.2.3
+   git push origin main v1.2.3
    ```
-3. GitHub Actions builds on Windows, signs `TypeCommander.exe`, and publishes a GitHub Release with the zip and exe attached. The build fails if the tag doesn't match `VERSION` or the signature doesn't verify.
+3. GitHub Actions builds the exe, signs it, and publishes a release, using the `CHANGELOG.md` section as the release notes. The run fails if the tag doesn't match `VERSION` or the signature doesn't verify.
 
-## Code signing
-
-Tagged releases are signed with [Azure Artifact Signing](https://learn.microsoft.com/azure/artifact-signing/quickstart) by the `release` job in `.github/workflows/release.yml`. Builds from `main`, pull requests and local builds are unsigned.
-
-One-time setup:
-
-1. In Azure, register the `Microsoft.CodeSigning` resource provider, create an Artifact Signing account (Basic), complete a Public Trust identity validation, and create a Public Trust certificate profile.
-2. Create an app registration for GitHub. Add a federated credential for GitHub Actions with entity type **Environment**, repository `keithhemenway/TypeCommander`, environment `release`.
-3. On the certificate profile, give that app the **Artifact Signing Certificate Profile Signer** role.
-4. In the GitHub repo, create an environment named `release` and add:
-   - Secrets: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`
-   - Variables: `SIGNING_ENDPOINT` (e.g. `https://eus.codesigning.azure.net/`), `SIGNING_ACCOUNT_NAME`, `SIGNING_CERTIFICATE_PROFILE`
-
-To check a downloaded exe: `Get-AuthenticodeSignature .\TypeCommander.exe` should report `Valid`.
+Signing setup and troubleshooting: [docs/code-signing.md](docs/code-signing.md).
 
 ## PowerShell version
 
-`scripts/TypeCommander.ps1` is the original script: it waits 3 seconds and types `C:\temp\keys.txt`.
+`scripts/TypeCommander.ps1` is the original script. It waits 3 seconds, then types `C:\temp\keys.txt`.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\TypeCommander.ps1
 ```
-
-## How typing works
-
-SendKeys special characters (`+ ^ % ~ ( ) { } [ ]`) are escaped so they type literally, and line breaks become `{ENTER}`. Keep focus on the target window until typing finishes.
