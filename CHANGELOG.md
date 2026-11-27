@@ -2,6 +2,11 @@
 
 All notable changes to TypeCommander are recorded here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [1.1.1] - 2026-11-26
+
+### Changed
+- Release builds of `TypeCommander.exe` are now code-signed (Azure Artifact Signing), so Windows shows Keith Hemenway as the verified publisher and is less likely to block them.
+
 ## [1.1.0] - 2026-11-25
 
 ### Added

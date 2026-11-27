@@ -11,7 +11,7 @@ Get the latest `TypeCommander-vX.Y.Z-win.zip` (or the bare exe) from the [Releas
 
 ## If double-clicking does nothing
 
-TypeCommander isn't code-signed yet, so Windows may block it silently:
+Release builds are code-signed (see [Code signing](#code-signing)). Older releases and local builds aren't, so Windows may block them silently:
 
 - **Smart App Control** (on by default on clean Windows 11 installs) blocks unsigned apps it doesn't recognize, sometimes with only a brief notification. Check *Windows Security > App & browser control > Smart App Control*, and *Event Viewer > Applications and Services Logs > Microsoft > Windows > CodeIntegrity > Operational* (event 3077 or 3033).
 - **Downloaded file blocked:** right-click the exe or zip > Properties > tick **Unblock**, or run `Unblock-File .\TypeCommander.exe` in PowerShell.
@@ -62,7 +62,22 @@ Both produce `build\TypeCommander.exe` and `dist\TypeCommander-v<VERSION>-win.zi
    git tag v1.1.0
    git push origin main --tags
    ```
-3. GitHub Actions builds on Windows and publishes a GitHub Release with the zip and exe attached. The build fails if the tag doesn't match `VERSION`.
+3. GitHub Actions builds on Windows, signs `TypeCommander.exe`, and publishes a GitHub Release with the zip and exe attached. The build fails if the tag doesn't match `VERSION` or the signature doesn't verify.
+
+## Code signing
+
+Tagged releases are signed with [Azure Artifact Signing](https://learn.microsoft.com/azure/artifact-signing/quickstart) by the `release` job in `.github/workflows/release.yml`. Builds from `main`, pull requests and local builds are unsigned.
+
+One-time setup:
+
+1. In Azure, register the `Microsoft.CodeSigning` resource provider, create an Artifact Signing account (Basic), complete a Public Trust identity validation, and create a Public Trust certificate profile.
+2. Create an app registration for GitHub. Add a federated credential for GitHub Actions with entity type **Environment**, repository `keithhemenway/TypeCommander`, environment `release`.
+3. On the certificate profile, give that app the **Artifact Signing Certificate Profile Signer** role.
+4. In the GitHub repo, create an environment named `release` and add:
+   - Secrets: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`
+   - Variables: `SIGNING_ENDPOINT` (e.g. `https://eus.codesigning.azure.net/`), `SIGNING_ACCOUNT_NAME`, `SIGNING_CERTIFICATE_PROFILE`
+
+To check a downloaded exe: `Get-AuthenticodeSignature .\TypeCommander.exe` should report `Valid`.
 
 ## PowerShell version
 

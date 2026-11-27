@@ -2,6 +2,8 @@
 rem Builds TypeCommander with the C# compiler that ships with Windows (.NET Framework 4.x).
 rem No Visual Studio or SDK needed.
 rem   Output: build\TypeCommander.exe and dist\TypeCommander-v<VERSION>-win.zip
+rem   "build.bat package" skips compiling and only rebuilds the zip from build\TypeCommander.exe
+rem   (used by CI after the exe has been signed).
 setlocal
 cd /d "%~dp0"
 
@@ -17,6 +19,14 @@ if not exist obj mkdir obj
 if not exist build mkdir build
 if not exist dist mkdir dist
 
+if /i "%~1"=="package" (
+  if not exist build\TypeCommander.exe (
+    echo build\TypeCommander.exe not found. Run build.bat first.
+    exit /b 1
+  )
+  goto package
+)
+
 > obj\Version.cs (
   echo [assembly: System.Reflection.AssemblyVersion("%VER%.0"^)]
   echo [assembly: System.Reflection.AssemblyFileVersion("%VER%.0"^)]
@@ -28,6 +38,7 @@ if not exist dist mkdir dist
   src\TypeCommander.cs src\AssemblyInfo.cs obj\Version.cs
 if errorlevel 1 exit /b 1
 
+:package
 copy /y README.md build\ >nul
 copy /y CHANGELOG.md build\ >nul
 set ZIP=dist\TypeCommander-v%VER%-win.zip
