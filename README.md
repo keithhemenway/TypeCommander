@@ -5,12 +5,13 @@
 [![Code signed](https://img.shields.io/badge/code%20signed-Azure%20Artifact%20Signing-0078D4)](docs/code-signing.md)
 ![Windows](https://img.shields.io/badge/platform-Windows-0078D4)
 
-**Types a text file into any window, keystroke by keystroke.**
+**Types text into any window, keystroke by keystroke.**
 
-TypeCommander is a tiny, portable Windows tool that sends the contents of a text file to whatever window has focus. It's useful anywhere paste doesn't work: remote consoles, VMs, KVM/IPMI/iLO/iDRAC viewers, locked-down sessions.
+TypeCommander is a tiny, portable Windows tool that types text (from a file, the clipboard, or typed in) into whatever window has focus. It's useful anywhere paste doesn't work: remote consoles, VMs, KVM/IPMI/iLO/iDRAC viewers, locked-down sessions.
 
 - **Portable:** a single ~28 KB `TypeCommander.exe`. No installer, no dependencies.
 - **Runs everywhere:** needs only .NET Framework 4.x, which is built into Windows 8, 10, 11 and Server 2012+.
+- **Handles slow consoles:** an adjustable key delay for viewers that drop fast keystrokes.
 - **Signed:** release builds are code-signed, so Windows shows a verified publisher.
 - **Safe by default:** refuses binary files, won't type into the desktop or Explorer, and stops on Esc, Pause, mouse movement or loss of focus.
 
@@ -27,11 +28,16 @@ Get-AuthenticodeSignature .\TypeCommander.exe   # Status should be Valid
 ## Using it
 
 1. Run `TypeCommander.exe`.
-2. Pick a text file with **Browse...**, or drag it onto the window. The default is `C:\temp\keys.txt`.
-3. Check the preview, set the **Delay**, and click **Start typing**.
+2. Get the text into the box. Any of these works:
+   - **Browse...** for a file (any extension), or drag a file onto the window
+   - **Paste** from the clipboard
+   - type or edit the text directly
+3. Set **Start after** (seconds to wait) and, if needed, **Key delay**. Then click **Start typing**.
 4. Click into the target window before the countdown ends.
 
 **To stop at any time,** press **Esc** (works from any window), press **Pause**, move the mouse, or click **Cancel**.
+
+**Characters going missing?** Slow consoles and KVM/iLO/iDRAC viewers can drop keystrokes. Set **Key delay** to 20-50 ms and try again.
 
 With **Minimize while waiting** on, the app gets out of the way and focus usually returns to the window you were in.
 
@@ -40,6 +46,8 @@ You can also pass a file on the command line:
 ```
 TypeCommander.exe C:\path\to\commands.txt
 ```
+
+TypeCommander remembers the last file, delays, and window size in `%APPDATA%\TypeCommander\settings.ini`. Delete that file to reset.
 
 ### Safety checks
 
@@ -77,7 +85,7 @@ Both produce `build\TypeCommander.exe` and `dist\TypeCommander-v<VERSION>-win.zi
 src/TypeCommander.cs        App source (single file, C# 5)
 src/AssemblyInfo.cs         File properties (title, description, copyright)
 src/app.ico                 App icon
-scripts/TypeCommander.ps1   Original PowerShell one-shot script
+scripts/TypeCommander.ps1   PowerShell version (no GUI)
 docs/code-signing.md        How release signing is set up
 VERSION                     Current version number
 CHANGELOG.md                Release notes
@@ -99,8 +107,8 @@ Signing setup and troubleshooting: [docs/code-signing.md](docs/code-signing.md).
 
 ## PowerShell version
 
-`scripts/TypeCommander.ps1` is the original script. It waits 3 seconds, then types `C:\temp\keys.txt`.
+`scripts/TypeCommander.ps1` is a no-GUI version for when you can't run the exe. It waits a few seconds, then types the file:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\TypeCommander.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\TypeCommander.ps1 -Path .\commands.txt -Delay 5
 ```

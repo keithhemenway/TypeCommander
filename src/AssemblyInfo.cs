@@ -4,7 +4,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 
 [assembly: AssemblyTitle("TypeCommander")]
-[assembly: AssemblyDescription("Types the contents of a text file into the focused window")]
+[assembly: AssemblyDescription("Types text from a file, the clipboard or the keyboard into the focused window")]
 [assembly: AssemblyProduct("TypeCommander")]
 [assembly: AssemblyCopyright("Copyright (c) 2026 Keith Hemenway")]
 [assembly: ComVisible(false)]

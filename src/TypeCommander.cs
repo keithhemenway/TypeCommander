@@ -1,4 +1,4 @@
-// TypeCommander - types the contents of a text file into the focused window.
+// TypeCommander - types text (from a file, the clipboard, or typed in) into the focused window.
 // Single file, no dependencies beyond .NET Framework 4.x (built into Windows).
 // Written in C# 5 so the csc.exe that ships with Windows can compile it.
 using System;
@@ -16,10 +16,10 @@ namespace TypeCommander
 {
     internal sealed class MainForm : Form
     {
-        private const string DefaultFile = @"C:\temp\keys.txt";
         private const int LargeFileChars = 20000;
         private const int ChunkChars = 8;
         private const int MouseStopPixels = 40;
+        private const int MaxKeyDelayMs = 1000;
         private const int HotkeyId = 0x5443;
         private const int WM_HOTKEY = 0x0312;
 
@@ -42,8 +42,11 @@ namespace TypeCommander
         private readonly TextBox pathBox = new TextBox();
         private readonly Button browseButton = new Button();
         private readonly NumericUpDown delayBox = new NumericUpDown();
+        private readonly NumericUpDown keyDelayBox = new NumericUpDown();
         private readonly CheckBox minimizeBox = new CheckBox();
-        private readonly TextBox previewBox = new TextBox();
+        private readonly Button pasteButton = new Button();
+        private readonly Button clearButton = new Button();
+        private readonly TextBox textBox = new TextBox();
         private readonly Label statusLabel = new Label();
         private readonly ProgressBar progressBar = new ProgressBar();
         private readonly Button startButton = new Button();
@@ -54,106 +57,188 @@ namespace TypeCommander
         private bool hotkeyRegistered;
         private volatile bool stopRequested;
         private volatile bool typing;
+        private bool loadingFile;
+        private Size savedSize;
+
+        private static readonly string SettingsFile = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), @"TypeCommander\settings.ini");
 
         private static readonly string AppTitle = "TypeCommander v" +
             typeof(MainForm).Assembly.GetName().Version.ToString(3);
 
         public MainForm(string initialPath)
         {
+            Dictionary<string, string> settings = LoadSettings();
+
             Text = AppTitle;
-            FormBorderStyle = FormBorderStyle.FixedSingle;
-            MaximizeBox = false;
+            FormBorderStyle = FormBorderStyle.Sizable;
             StartPosition = FormStartPosition.CenterScreen;
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
-            ClientSize = new Size(460, 350);
+            ClientSize = new Size(520, 420);
+            MinimumSize = new Size(480, 360);
             Font = new Font("Segoe UI", 9F);
             KeyPreview = true;
             AllowDrop = true;
             try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch (Exception) { }
 
+            AnchorStyles top = AnchorStyles.Top | AnchorStyles.Left;
+            AnchorStyles topWide = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            AnchorStyles topRight = AnchorStyles.Top | AnchorStyles.Right;
+            AnchorStyles bottomWide = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+
             Label fileLabel = new Label();
-            fileLabel.Text = "Text file:";
+            fileLabel.Text = "File:";
             fileLabel.SetBounds(12, 15, 70, 20);
 
-            pathBox.SetBounds(85, 12, 280, 23);
-            pathBox.Text = initialPath;
-            pathBox.TextChanged += delegate { LoadPreview(); };
+            pathBox.SetBounds(85, 12, 340, 23);
+            pathBox.Anchor = topWide;
+            pathBox.TextChanged += delegate { LoadFile(false); };
 
             browseButton.Text = "Browse...";
-            browseButton.SetBounds(372, 11, 76, 25);
+            browseButton.SetBounds(432, 11, 76, 25);
+            browseButton.Anchor = topRight;
             browseButton.Click += delegate { Browse(); };
 
             Label delayLabel = new Label();
-            delayLabel.Text = "Delay (sec):";
+            delayLabel.Text = "Start after:";
             delayLabel.SetBounds(12, 48, 72, 20);
 
-            delayBox.SetBounds(85, 45, 60, 23);
+            delayBox.SetBounds(85, 45, 55, 23);
             delayBox.Minimum = 0;
             delayBox.Maximum = 300;
-            delayBox.Value = 3;
+            delayBox.Value = Clamp(GetInt(settings, "delay", 3), 0, 300);
+
+            Label secLabel = new Label();
+            secLabel.Text = "sec";
+            secLabel.SetBounds(143, 48, 30, 20);
+
+            Label keyDelayLabel = new Label();
+            keyDelayLabel.Text = "Key delay:";
+            keyDelayLabel.SetBounds(182, 48, 64, 20);
+
+            keyDelayBox.SetBounds(248, 45, 60, 23);
+            keyDelayBox.Minimum = 0;
+            keyDelayBox.Maximum = MaxKeyDelayMs;
+            keyDelayBox.Increment = 10;
+            keyDelayBox.Value = Clamp(GetInt(settings, "keyDelayMs", 0), 0, MaxKeyDelayMs);
+
+            Label msLabel = new Label();
+            msLabel.Text = "ms";
+            msLabel.SetBounds(311, 48, 30, 20);
+
+            ToolTip tips = new ToolTip();
+            tips.SetToolTip(keyDelayBox, "Pause between keystrokes. Raise this (e.g. 20-50 ms) if a slow console or KVM viewer drops characters.");
+            tips.SetToolTip(delayBox, "Seconds to wait before typing, so you can click into the target window.");
 
             minimizeBox.Text = "Minimize while waiting";
-            minimizeBox.SetBounds(160, 46, 290, 22);
-            minimizeBox.Checked = false;
+            minimizeBox.SetBounds(350, 46, 160, 22);
+            minimizeBox.Checked = GetInt(settings, "minimize", 0) != 0;
 
-            previewBox.SetBounds(12, 78, 436, 170);
-            previewBox.Multiline = true;
-            previewBox.ReadOnly = true;
-            previewBox.ScrollBars = ScrollBars.Both;
-            previewBox.WordWrap = false;
-            previewBox.Font = new Font("Consolas", 9F);
-            previewBox.BackColor = SystemColors.Window;
+            Label textLabel = new Label();
+            textLabel.Text = "Text to type (load a file, paste, or type here):";
+            textLabel.SetBounds(12, 80, 330, 20);
 
-            statusLabel.SetBounds(12, 256, 436, 20);
+            pasteButton.Text = "Paste";
+            pasteButton.SetBounds(368, 76, 68, 25);
+            pasteButton.Anchor = topRight;
+            pasteButton.Click += delegate { PasteClipboard(); };
+            tips.SetToolTip(pasteButton, "Replace the text with what's on the clipboard.");
 
-            progressBar.SetBounds(12, 279, 436, 14);
+            clearButton.Text = "Clear";
+            clearButton.SetBounds(440, 76, 68, 25);
+            clearButton.Anchor = topRight;
+            clearButton.Click += delegate { pathBox.Text = ""; textBox.Text = ""; textBox.Focus(); };
+
+            textBox.SetBounds(12, 105, 496, 213);
+            textBox.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            textBox.Multiline = true;
+            textBox.AcceptsReturn = true;
+            textBox.AcceptsTab = true;
+            textBox.MaxLength = 0;
+            textBox.ScrollBars = ScrollBars.Both;
+            textBox.WordWrap = false;
+            textBox.Font = new Font("Consolas", 9F);
+            textBox.TextChanged += delegate { OnTextChanged(); };
+
+            statusLabel.SetBounds(12, 326, 496, 20);
+            statusLabel.Anchor = bottomWide;
+            statusLabel.AutoEllipsis = true;
+
+            progressBar.SetBounds(12, 349, 496, 14);
+            progressBar.Anchor = bottomWide;
             progressBar.Minimum = 0;
             progressBar.Maximum = 1000;
 
             startButton.Text = "Start typing";
-            startButton.SetBounds(12, 303, 436, 34);
+            startButton.SetBounds(12, 373, 496, 34);
+            startButton.Anchor = bottomWide;
             startButton.Click += delegate { if (counting) RequestStop(); else Begin(); };
 
             timer.Interval = 1000;
             timer.Tick += delegate { Tick(); };
 
             Controls.AddRange(new Control[] {
-                fileLabel, pathBox, browseButton, delayLabel, delayBox,
-                minimizeBox, previewBox, statusLabel, progressBar, startButton });
+                fileLabel, pathBox, browseButton, delayLabel, delayBox, secLabel,
+                keyDelayLabel, keyDelayBox, msLabel, minimizeBox,
+                textLabel, pasteButton, clearButton, textBox,
+                statusLabel, progressBar, startButton });
 
-            AcceptButton = startButton;
             KeyDown += OnKeyDown;
             DragEnter += OnDragEnter;
             DragDrop += OnDragDrop;
 
-            LoadPreview();
+            savedSize = new Size(GetInt(settings, "width", 0), GetInt(settings, "height", 0));
+
+            // A file on the command line wins; otherwise reopen the last file if it still exists.
+            string lastFile;
+            if (string.IsNullOrEmpty(initialPath) && settings.TryGetValue("lastFile", out lastFile) && File.Exists(lastFile))
+                initialPath = lastFile;
+            if (!string.IsNullOrEmpty(initialPath)) pathBox.Text = initialPath;
+            else OnTextChanged();
+        }
+
+        // The saved size is in real pixels, so apply it after DPI scaling has run.
+        protected override void OnLoad(EventArgs e)
+        {
+            base.OnLoad(e);
+            if (savedSize.Width >= MinimumSize.Width && savedSize.Height >= MinimumSize.Height)
+            {
+                Rectangle area = Screen.FromControl(this).WorkingArea;
+                Size = new Size(Math.Min(savedSize.Width, area.Width), Math.Min(savedSize.Height, area.Height));
+                CenterToScreen();
+            }
         }
 
         private void Browse()
         {
             using (OpenFileDialog dlg = new OpenFileDialog())
             {
-                dlg.Title = "Choose the text to type";
-                dlg.Filter = "Text files (*.txt)|*.txt|All files (*.*)|*.*";
+                dlg.Title = "Choose the file to type";
+                dlg.Filter = "All files (*.*)|*.*";
                 try
                 {
-                    string dir = Path.GetDirectoryName(pathBox.Text);
+                    string dir = Path.GetDirectoryName(pathBox.Text.Trim());
                     if (!string.IsNullOrEmpty(dir) && Directory.Exists(dir)) dlg.InitialDirectory = dir;
                 }
                 catch (ArgumentException) { }
-                if (dlg.ShowDialog(this) == DialogResult.OK) pathBox.Text = dlg.FileName;
+                if (dlg.ShowDialog(this) == DialogResult.OK)
+                {
+                    if (dlg.FileName == pathBox.Text) LoadFile(true);
+                    else pathBox.Text = dlg.FileName;
+                }
             }
         }
 
-        private void LoadPreview()
+        // Loads the file named in the path box into the editor. While the path is
+        // being typed and doesn't exist yet, the editor is left alone.
+        private void LoadFile(bool reportMissing)
         {
             string path = pathBox.Text.Trim();
-            if (path.Length == 0 || !File.Exists(path))
+            if (path.Length == 0) return;
+            if (!File.Exists(path))
             {
-                previewBox.Text = "";
-                SetStatus("File not found. Pick a text file to type.");
-                startButton.Enabled = false;
+                if (reportMissing) SetStatus("File not found: " + path);
                 return;
             }
             try
@@ -162,30 +247,63 @@ namespace TypeCommander
                 string problem = CheckText(text);
                 if (problem != null)
                 {
-                    previewBox.Text = "";
                     SetStatus(problem);
                     startButton.Enabled = false;
                     return;
                 }
-                previewBox.Text = text.Replace("\r\n", "\n").Replace("\n", "\r\n");
-                int lines = text.Length == 0 ? 0 : text.Split('\n').Length;
-                SetStatus(string.Format("{0:N0} characters, {1:N0} lines. Click Start, then click into the target window.", text.Length, lines));
-                startButton.Enabled = text.Length > 0;
+                loadingFile = true;
+                try { textBox.Text = text.Replace("\r\n", "\n").Replace("\n", "\r\n"); }
+                finally { loadingFile = false; }
+                OnTextChanged();
             }
             catch (Exception ex)
             {
-                previewBox.Text = "";
                 SetStatus("Can't read file: " + ex.Message);
                 startButton.Enabled = false;
             }
         }
 
+        private void PasteClipboard()
+        {
+            string text = null;
+            try { if (Clipboard.ContainsText()) text = Clipboard.GetText(); }
+            catch (ExternalException) { }
+            if (string.IsNullOrEmpty(text)) { SetStatus("The clipboard has no text."); return; }
+            pathBox.Text = "";
+            textBox.Text = text.Replace("\r\n", "\n").Replace("\n", "\r\n");
+            textBox.Focus();
+        }
+
+        private void OnTextChanged()
+        {
+            if (loadingFile) return;
+            string text = textBox.Text;
+            string problem = CheckText(text);
+            if (problem != null)
+            {
+                SetStatus(problem);
+                startButton.Enabled = false;
+                return;
+            }
+            if (text.Length == 0)
+            {
+                SetStatus("Pick a file, paste, or type the text to send.");
+                startButton.Enabled = false;
+                return;
+            }
+            int lines = 1;
+            foreach (char c in text) if (c == '\n') lines++;
+            if (text.EndsWith("\n")) lines--;
+            SetStatus(string.Format("{0:N0} characters, {1:N0} lines. Click Start, then click into the target window.", text.Length, lines));
+            startButton.Enabled = true;
+        }
+
         private void Begin()
         {
-            LoadPreview();
+            OnTextChanged();
             if (!startButton.Enabled) return;
-            if (previewBox.TextLength > LargeFileChars &&
-                MessageBox.Show(this, string.Format("This file is {0:N0} characters. Type all of it?", previewBox.TextLength),
+            if (textBox.TextLength > LargeFileChars &&
+                MessageBox.Show(this, string.Format("This text is {0:N0} characters. Type all of it?", textBox.TextLength),
                     "TypeCommander", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
 
             secondsLeft = (int)delayBox.Value;
@@ -221,9 +339,8 @@ namespace TypeCommander
 
         private void Fire()
         {
-            string text;
-            try { text = File.ReadAllText(pathBox.Text.Trim()); }
-            catch (Exception ex) { Finish("Failed: " + ex.Message); return; }
+            string text = textBox.Text;
+            int keyDelay = (int)keyDelayBox.Value;
 
             string problem = CheckText(text);
             if (problem != null) { Finish(problem); return; }
@@ -238,7 +355,7 @@ namespace TypeCommander
             SetStatus("Typing... press Esc, Pause, or move the mouse to stop.");
             Text = "Typing - " + AppTitle;
 
-            Thread worker = new Thread(delegate() { TypeText(text, target); });
+            Thread worker = new Thread(delegate() { TypeText(text, target, keyDelay); });
             worker.IsBackground = true;
             worker.SetApartmentState(ApartmentState.STA);
             worker.Start();
@@ -246,7 +363,7 @@ namespace TypeCommander
 
         // Runs on a background thread so the window, Cancel button and Esc
         // hotkey stay responsive. Checks for a stop between small chunks.
-        private void TypeText(string text, IntPtr target)
+        private void TypeText(string text, IntPtr target, int keyDelay)
         {
             string result;
             int typed = 0;
@@ -256,7 +373,7 @@ namespace TypeCommander
                 GetCursorPos(out start);
                 result = null;
                 int lastUpdate = Environment.TickCount;
-                foreach (string chunk in Chunks(text))
+                foreach (string chunk in Chunks(text, keyDelay > 0 ? 1 : ChunkChars))
                 {
                     if (stopRequested || (GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0 || (GetAsyncKeyState(VK_PAUSE) & 0x8000) != 0)
                     { result = "Stopped after {0} of {1} characters."; break; }
@@ -268,6 +385,7 @@ namespace TypeCommander
                     { result = "Stopped: target window lost focus after {0} of {1} characters."; break; }
                     SendKeys.SendWait(Escape(chunk));
                     typed += chunk.Length;
+                    if (keyDelay > 0) Thread.Sleep(keyDelay);
                     if (Environment.TickCount - lastUpdate >= 50)
                     {
                         lastUpdate = Environment.TickCount;
@@ -311,6 +429,7 @@ namespace TypeCommander
         {
             stopRequested = true;
             if (hotkeyRegistered) { UnregisterHotKey(Handle, HotkeyId); hotkeyRegistered = false; }
+            SaveSettings();
             base.OnFormClosing(e);
         }
 
@@ -348,12 +467,12 @@ namespace TypeCommander
 
         // Splits text into small pieces (never splitting a CRLF) so typing can be
         // stopped between pieces.
-        private static IEnumerable<string> Chunks(string text)
+        private static IEnumerable<string> Chunks(string text, int size)
         {
             int i = 0;
             while (i < text.Length)
             {
-                int len = Math.Min(ChunkChars, text.Length - i);
+                int len = Math.Min(size, text.Length - i);
                 if (i + len < text.Length && text[i + len - 1] == '\r' && text[i + len] == '\n') len++;
                 yield return text.Substring(i, len);
                 i += len;
@@ -390,10 +509,60 @@ namespace TypeCommander
             pathBox.Enabled = on;
             browseButton.Enabled = on;
             delayBox.Enabled = on;
+            keyDelayBox.Enabled = on;
             minimizeBox.Enabled = on;
+            pasteButton.Enabled = on;
+            clearButton.Enabled = on;
+            textBox.ReadOnly = !on;
         }
 
         private void SetStatus(string msg) { statusLabel.Text = msg; }
+
+        // Settings live in %APPDATA%\TypeCommander\settings.ini as key=value lines.
+        // Failing to read or write them is never an error.
+        private static Dictionary<string, string> LoadSettings()
+        {
+            Dictionary<string, string> d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                if (!File.Exists(SettingsFile)) return d;
+                foreach (string line in File.ReadAllLines(SettingsFile))
+                {
+                    int eq = line.IndexOf('=');
+                    if (eq > 0) d[line.Substring(0, eq).Trim()] = line.Substring(eq + 1).Trim();
+                }
+            }
+            catch (Exception) { }
+            return d;
+        }
+
+        private void SaveSettings()
+        {
+            try
+            {
+                Size size = WindowState == FormWindowState.Normal ? Size : RestoreBounds.Size;
+                string path = pathBox.Text.Trim();
+                string[] lines = {
+                    "lastFile=" + (path.Length > 0 && File.Exists(path) ? Path.GetFullPath(path) : ""),
+                    "delay=" + (int)delayBox.Value,
+                    "keyDelayMs=" + (int)keyDelayBox.Value,
+                    "minimize=" + (minimizeBox.Checked ? 1 : 0),
+                    "width=" + size.Width,
+                    "height=" + size.Height };
+                Directory.CreateDirectory(Path.GetDirectoryName(SettingsFile));
+                File.WriteAllLines(SettingsFile, lines);
+            }
+            catch (Exception) { }
+        }
+
+        private static int GetInt(Dictionary<string, string> d, string key, int fallback)
+        {
+            string v;
+            int n;
+            return d.TryGetValue(key, out v) && int.TryParse(v, out n) ? n : fallback;
+        }
+
+        private static int Clamp(int v, int lo, int hi) { return Math.Max(lo, Math.Min(hi, v)); }
 
         private void OnKeyDown(object sender, KeyEventArgs e)
         {
@@ -408,7 +577,9 @@ namespace TypeCommander
         private void OnDragDrop(object sender, DragEventArgs e)
         {
             string[] files = e.Data.GetData(DataFormats.FileDrop) as string[];
-            if (files != null && files.Length > 0) pathBox.Text = files[0];
+            if (files == null || files.Length == 0) return;
+            if (files[0] == pathBox.Text) LoadFile(true);
+            else pathBox.Text = files[0];
         }
 
         [STAThread]
@@ -421,7 +592,7 @@ namespace TypeCommander
             {
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
-                Application.Run(new MainForm(args.Length > 0 ? args[0] : DefaultFile));
+                Application.Run(new MainForm(args.Length > 0 ? args[0] : null));
             }
             catch (Exception ex)
             {

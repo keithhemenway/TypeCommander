@@ -2,6 +2,19 @@
 
 All notable changes to TypeCommander are recorded here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [2.0.0] - 2026-11-26
+
+### Added
+- The text box is now an editor: type or paste text straight in, or load a file and tweak it before typing. **Paste** fills it from the clipboard and **Clear** empties it.
+- **Key delay** setting (milliseconds between keystrokes) for slow consoles and KVM/iLO/iDRAC viewers that drop characters when typing is fast.
+- Settings are remembered between runs: last file, start delay, key delay, "Minimize while waiting" and window size (stored in `%APPDATA%\TypeCommander\settings.ini`).
+- The window can be resized.
+
+### Changed
+- No more hard-coded default file (`C:\temp\keys.txt`). The app starts empty, or with the last file you used.
+- **Browse** shows all files instead of only `.txt` files.
+- `scripts/TypeCommander.ps1` takes `-Path` (required) and `-Delay` instead of always typing `C:\temp\keys.txt`.
+
 ## [1.1.1] - 2026-11-26
 
 ### Changed
