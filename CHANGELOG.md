@@ -2,6 +2,11 @@
 
 All notable changes to TypeCommander are recorded here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [2.0.1] - 2026-11-26
+
+### Removed
+- Settings are no longer saved. TypeCommander writes nothing to disk again: every run starts empty with the default delays. Remove any leftover `%APPDATA%\TypeCommander` folder from 2.0.0.
+
 ## [2.0.0] - 2026-11-26
 
 ### Added

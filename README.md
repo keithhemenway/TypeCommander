@@ -9,7 +9,7 @@
 
 TypeCommander is a tiny, portable Windows tool that types text (from a file, the clipboard, or typed in) into whatever window has focus. It's useful anywhere paste doesn't work: remote consoles, VMs, KVM/IPMI/iLO/iDRAC viewers, locked-down sessions.
 
-- **Portable:** a single ~28 KB `TypeCommander.exe`. No installer, no dependencies.
+- **Portable:** a single small `TypeCommander.exe`. No installer, no dependencies, and it never writes settings or anything else to disk.
 - **Runs everywhere:** needs only .NET Framework 4.x, which is built into Windows 8, 10, 11 and Server 2012+.
 - **Handles slow consoles:** an adjustable key delay for viewers that drop fast keystrokes.
 - **Signed:** release builds are code-signed, so Windows shows a verified publisher.
@@ -46,8 +46,6 @@ You can also pass a file on the command line:
 ```
 TypeCommander.exe C:\path\to\commands.txt
 ```
-
-TypeCommander remembers the last file, delays, and window size in `%APPDATA%\TypeCommander\settings.ini`. Delete that file to reset.
 
 ### Safety checks
 

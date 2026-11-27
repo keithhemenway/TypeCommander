@@ -58,18 +58,12 @@ namespace TypeCommander
         private volatile bool stopRequested;
         private volatile bool typing;
         private bool loadingFile;
-        private Size savedSize;
-
-        private static readonly string SettingsFile = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), @"TypeCommander\settings.ini");
 
         private static readonly string AppTitle = "TypeCommander v" +
             typeof(MainForm).Assembly.GetName().Version.ToString(3);
 
         public MainForm(string initialPath)
         {
-            Dictionary<string, string> settings = LoadSettings();
-
             Text = AppTitle;
             FormBorderStyle = FormBorderStyle.Sizable;
             StartPosition = FormStartPosition.CenterScreen;
@@ -106,7 +100,7 @@ namespace TypeCommander
             delayBox.SetBounds(85, 45, 55, 23);
             delayBox.Minimum = 0;
             delayBox.Maximum = 300;
-            delayBox.Value = Clamp(GetInt(settings, "delay", 3), 0, 300);
+            delayBox.Value = 3;
 
             Label secLabel = new Label();
             secLabel.Text = "sec";
@@ -120,7 +114,7 @@ namespace TypeCommander
             keyDelayBox.Minimum = 0;
             keyDelayBox.Maximum = MaxKeyDelayMs;
             keyDelayBox.Increment = 10;
-            keyDelayBox.Value = Clamp(GetInt(settings, "keyDelayMs", 0), 0, MaxKeyDelayMs);
+            keyDelayBox.Value = 0;
 
             Label msLabel = new Label();
             msLabel.Text = "ms";
@@ -132,7 +126,7 @@ namespace TypeCommander
 
             minimizeBox.Text = "Minimize while waiting";
             minimizeBox.SetBounds(350, 46, 160, 22);
-            minimizeBox.Checked = GetInt(settings, "minimize", 0) != 0;
+            minimizeBox.Checked = false;
 
             Label textLabel = new Label();
             textLabel.Text = "Text to type (load a file, paste, or type here):";
@@ -187,26 +181,8 @@ namespace TypeCommander
             DragEnter += OnDragEnter;
             DragDrop += OnDragDrop;
 
-            savedSize = new Size(GetInt(settings, "width", 0), GetInt(settings, "height", 0));
-
-            // A file on the command line wins; otherwise reopen the last file if it still exists.
-            string lastFile;
-            if (string.IsNullOrEmpty(initialPath) && settings.TryGetValue("lastFile", out lastFile) && File.Exists(lastFile))
-                initialPath = lastFile;
             if (!string.IsNullOrEmpty(initialPath)) pathBox.Text = initialPath;
             else OnTextChanged();
-        }
-
-        // The saved size is in real pixels, so apply it after DPI scaling has run.
-        protected override void OnLoad(EventArgs e)
-        {
-            base.OnLoad(e);
-            if (savedSize.Width >= MinimumSize.Width && savedSize.Height >= MinimumSize.Height)
-            {
-                Rectangle area = Screen.FromControl(this).WorkingArea;
-                Size = new Size(Math.Min(savedSize.Width, area.Width), Math.Min(savedSize.Height, area.Height));
-                CenterToScreen();
-            }
         }
 
         private void Browse()
@@ -428,7 +404,6 @@ namespace TypeCommander
         {
             stopRequested = true;
             if (hotkeyRegistered) { UnregisterHotKey(Handle, HotkeyId); hotkeyRegistered = false; }
-            SaveSettings();
             base.OnFormClosing(e);
         }
 
@@ -516,52 +491,6 @@ namespace TypeCommander
         }
 
         private void SetStatus(string msg) { statusLabel.Text = msg; }
-
-        // Settings live in %APPDATA%\TypeCommander\settings.ini as key=value lines.
-        // Failing to read or write them is never an error.
-        private static Dictionary<string, string> LoadSettings()
-        {
-            Dictionary<string, string> d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            try
-            {
-                if (!File.Exists(SettingsFile)) return d;
-                foreach (string line in File.ReadAllLines(SettingsFile))
-                {
-                    int eq = line.IndexOf('=');
-                    if (eq > 0) d[line.Substring(0, eq).Trim()] = line.Substring(eq + 1).Trim();
-                }
-            }
-            catch (Exception) { }
-            return d;
-        }
-
-        private void SaveSettings()
-        {
-            try
-            {
-                Size size = WindowState == FormWindowState.Normal ? Size : RestoreBounds.Size;
-                string path = pathBox.Text.Trim();
-                string[] lines = {
-                    "lastFile=" + (path.Length > 0 && File.Exists(path) ? Path.GetFullPath(path) : ""),
-                    "delay=" + (int)delayBox.Value,
-                    "keyDelayMs=" + (int)keyDelayBox.Value,
-                    "minimize=" + (minimizeBox.Checked ? 1 : 0),
-                    "width=" + size.Width,
-                    "height=" + size.Height };
-                Directory.CreateDirectory(Path.GetDirectoryName(SettingsFile));
-                File.WriteAllLines(SettingsFile, lines);
-            }
-            catch (Exception) { }
-        }
-
-        private static int GetInt(Dictionary<string, string> d, string key, int fallback)
-        {
-            string v;
-            int n;
-            return d.TryGetValue(key, out v) && int.TryParse(v, out n) ? n : fallback;
-        }
-
-        private static int Clamp(int v, int lo, int hi) { return Math.Max(lo, Math.Min(hi, v)); }
 
         private void OnKeyDown(object sender, KeyEventArgs e)
         {
